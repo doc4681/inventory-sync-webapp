@@ -12,7 +12,7 @@ from logic import (
 
 st.set_page_config(
     page_title="Inventory Sync Manager",
-    page_icon="🚗",
+    page_icon="icon.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
