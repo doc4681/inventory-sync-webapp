@@ -12,10 +12,22 @@ from logic import (
 
 st.set_page_config(
     page_title="Inventory Sync Manager",
-    page_icon="icon.png",
+    page_icon="🚗",
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ==========================================
+# ICONE PERSONALIZZATE PER IOS HOME SCREEN
+# ==========================================
+
+st.markdown("""
+<link rel="apple-touch-icon" href="/icon.png">
+<link rel="apple-touch-icon-precomposed" href="/icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Inventory Sync">
+""", unsafe_allow_html=True)
 
 # CSS personalizzato per migliorare l'aspetto
 st.markdown("""
@@ -47,7 +59,7 @@ st.markdown("""
     .info-box {
         padding: 1rem;
         border-radius: 0.5rem;
-        background-color: #1c1c1c;
+        background-color: #E3F2FD;
         border-left: 4px solid #2196F3;
     }
     .metric-card {
