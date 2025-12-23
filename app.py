@@ -59,6 +59,36 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+def load_dataframe(uploaded_file):
+    """
+    Carica un file CSV, XLS o XLSX in un DataFrame pandas.
+    Gestisce automaticamente il formato basandosi sull'estensione.
+    """
+    import os
+    
+    # Estrai estensione del file
+    filename = uploaded_file.name.lower()
+    _, ext = os.path.splitext(filename)
+    
+    try:
+        if ext == '.csv':
+            # Prova prima con separatore standard, poi con punto e virgola
+            try:
+                return pd.read_csv(uploaded_file, dtype=str)
+            except:
+                uploaded_file.seek(0)  # Torna all'inizio del file
+                return pd.read_csv(uploaded_file, dtype=str, sep=';')
+        
+        elif ext in ['.xls', '.xlsx']:
+            return pd.read_excel(uploaded_file, dtype=str)
+        
+        else:
+            raise ValueError(f"Formato file non supportato: {ext}")
+            
+    except Exception as e:
+        raise ValueError(f"Errore nella lettura del file {filename}: {str(e)}")
+
+
 # ==========================================
 # INTERFACCIA UTENTE
 # ==========================================
@@ -88,9 +118,9 @@ with col_upload:
     )
     
     file_bbr = st.file_uploader(
-        "📁 **BBR_export.csv** (Source B)",
-        type=["csv"],
-        help="Export BBR con colonne 'DescrizioneVariante' e 'QtaResidua'"
+        "📁 **BBR_export** (Source B)",
+        type=["csv", "xls", "xlsx"],
+        help="Export BBR (formato CSV, XLS o XLSX) con colonne 'DescrizioneVariante' e 'QtaResidua'"
     )
 
 with col_info:
@@ -141,9 +171,9 @@ if ready_to_process:
         with st.spinner('Elaborazione in corso...'):
             try:
                 # Leggi i file caricati
-                df_shopify = pd.read_csv(file_shopify)
-                df_mcws = pd.read_csv(file_mcws)
-                df_bbr = pd.read_csv(file_bbr)
+                df_shopify = load_dataframe(file_shopify)
+                df_mcws = load_dataframe(file_mcws)
+                df_bbr = load_dataframe(file_bbr)
                 
                 # Esegui la logica di processing
                 result_df, stats, duplicate_report, log_messages = process_inventory(
