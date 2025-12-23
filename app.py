@@ -47,7 +47,7 @@ st.markdown("""
     .info-box {
         padding: 1rem;
         border-radius: 0.5rem;
-        background-color: #E3F2FD;
+        background-color: #1c1c1c;
         border-left: 4px solid #2196F3;
     }
     .metric-card {
