@@ -1,3 +1,7 @@
+import pandas as pd
+import re
+from collections import defaultdict
+
 # ==========================================
 # CONFIGURAZIONE
 # ==========================================
@@ -40,7 +44,6 @@ def clean_code(code):
     if pd.isna(code) or code == '':
         return ""
     s = str(code).strip().upper()
-    import re
     return re.sub(r'[^A-Z0-9]', '', s)
 
 
@@ -56,8 +59,6 @@ def find_duplicate_codes_with_trademark_check(df_mcws, code_col, trademark_col):
     Trova codici duplicati e verifica trademark.
     Ritorna: valid_rows_indices, duplicate_report
     """
-    from collections import defaultdict
-    
     code_groups = defaultdict(list)
     
     for idx, row in df_mcws.iterrows():
