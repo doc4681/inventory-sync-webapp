@@ -202,7 +202,7 @@ def process_inventory(shopify_df, mcws_df, bbr_df):
         raw_sku = row.get(COL_SHOPIFY_SKU, '')
         sku_clean = clean_code(raw_sku)
         
-        if not sku_clean or sku_clean.startswith("KK"):
+        if not sku_clean: # COMMENTATO: or sku_clean.startswith("KK")or sku_clean.startswith("KK")
             continue
         if sku_clean in processed_skus:
             continue
