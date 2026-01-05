@@ -44,7 +44,8 @@ def clean_code(code):
     if pd.isna(code) or code == '':
         return ""
     s = str(code).strip().upper()
-    return re.sub(r'[^A-Z0-9]', '', s)
+    s = re.sub(r'[^A-Z0-9]', '', s)
+    return s.lstrip('0')
 
 
 def clean_trademark(trademark):
