@@ -65,6 +65,16 @@ BBR_MARKUP = 1.75  # Markup fisso per prodotti BBR
 # Tabella markup per brand MCWS (caricata da Vroomi_Markup.txt)
 MCWS_MARKUP_TABLE: Dict[str, float] = {}
 
+# ==========================================
+# DEBUG / CHANGE LOG CONFIG
+# ==========================================
+
+# Imposta a True per abilitare la colonna con il log delle variazioni
+# Imposta a False per disabilitarla (una volta verificato il funzionamento)
+ENABLE_CHANGE_LOG = True
+
+COL_CHANGE_LOG = 'Change Log'  # Nome della colonna per il log
+
 OUTPUT_PREFIX = 'INVENTORY_UPDATE'
 
 # ==========================================
@@ -232,6 +242,167 @@ def identify_product_source(row: pd.Series) -> str:
         return 'BBR'
     
     return 'MCWS'  # Default fallback
+
+
+def identify_product_source(row: pd.Series) -> str:
+    """
+    Identifica se un prodotto proviene da BBR o MCWS basandosi sui dati disponibili.
+    
+    Args:
+        row: Riga del DataFrame Shopify
+    
+    Returns:
+        'BBR', 'MCWS' o 'UNKNOWN'
+    """
+    # Se abbiamo un costo BBR valido, è un prodotto BBR
+    costo_bbr = clean_numeric(row.get(COL_COSTO_BBR, None))
+    if costo_bbr > 0:
+        return 'BBR'
+    
+    # Se abbiamo un net price valido, è un prodotto MCWS
+    net_price = clean_numeric(row.get(COL_NET_PRICE, None))
+    if net_price > 0:
+        return 'MCWS'
+    
+    # Se abbiamo Variant Cost, prova a determinare la fonte dal brand
+    variant_cost = clean_numeric(row.get(COL_SHOPIFY_COST, None))
+    if variant_cost <= 0:
+        return 'UNKNOWN'
+    
+    # Prova a determinare dal brand
+    brand = extract_brand_from_tags(row.get(COL_SHOPIFY_TAGS, ''))
+    
+    # Se è un brand BBR, usa logica BBR
+    if 'BBR' in brand or 'BBR-MODELS' in brand:
+        return 'BBR'
+    
+    return 'MCWS'  # Default fallback
+
+
+def add_change_log_column(
+    df_output: pd.DataFrame,
+    original_df: pd.DataFrame,
+    log_messages: List[str]
+) -> pd.DataFrame:
+    """
+    Aggiunge una colonna 'Change Log' che descrive tutte le variazioni trovate.
+    
+    Questa funzione è pensata per il DEBUG e la VERIFICA.
+    Una volta verificato che tutto funziona correttamente,
+    può essere disabilitata impostando ENABLE_CHANGE_LOG = False in cima al file.
+    
+    Variazioni tracciate:
+    - Inventory: qty changed (0→1 o 1→0)
+    - Cost BBR: costo variato rispetto a CostoBBRModels
+    - Cost MCWS: costo variato rispetto a Net Price
+    - Price BBR: prezzo ricalcolato con markup 1.75
+    - Price MCWS: prezzo ricalcolato con markup brand
+    
+    Args:
+        df_output: DataFrame processato con i nuovi valori
+        original_df: DataFrame originale di Shopify per confronto
+        log_messages: Lista per accumulare messaggi di log
+    
+    Returns:
+        DataFrame con colonna 'Change Log' aggiunta
+    """
+    if not ENABLE_CHANGE_LOG:
+        log_messages.append("   [CHANGE LOG] Disabilitato (ENABLE_CHANGE_LOG = False)")
+        return df_output
+    
+    if df_output.empty:
+        log_messages.append("   [CHANGE LOG] DataFrame vuoto, nessuna elaborazione")
+        return df_output
+    
+    log_messages.append("   [CHANGE LOG] Inizio analisi variazioni...")
+    
+    # Crea un dizionario SKU -> riga originale per lookup veloce
+    original_by_sku = {}
+    for idx, row in original_df.iterrows():
+        sku = clean_code(row.get(COL_SHOPIFY_SKU, ''))
+        if sku:
+            original_by_sku[sku] = row
+    
+    # Aggiungi la colonna Change Log
+    df_output[COL_CHANGE_LOG] = ''
+    
+    change_count = 0
+    
+    for idx, row in df_output.iterrows():
+        sku = clean_code(row.get(COL_SHOPIFY_SKU, ''))
+        changes = []
+        
+        # Get original row for comparison
+        original_row = original_by_sku.get(sku, pd.Series())
+        
+        if original_row.empty:
+            # Prodotto non trovato nell'originale, skip
+            df_output.at[idx, COL_CHANGE_LOG] = 'NUOVO PRODOTTO'
+            change_count += 1
+            continue
+        
+        # ========================================
+        # 1. CHECK INVENTORY CHANGES
+        # ========================================
+        original_qty = clean_numeric(original_row.get(COL_SHOPIFY_QTY, 0))
+        new_qty = clean_numeric(row.get(COL_SHOPIFY_QTY, 0))
+        
+        if original_qty != new_qty:
+            if new_qty == 1:
+                changes.append(f"QTY: {int(original_qty)}→{int(new_qty)} (RIATTIVATO)")
+            elif new_qty == 0:
+                changes.append(f"QTY: {int(original_qty)}→{int(new_qty)} (DISATTIVATO)")
+            else:
+                changes.append(f"QTY: {int(original_qty)}→{int(new_qty)}")
+        
+        # ========================================
+        # 2. CHECK COST CHANGES
+        # ========================================
+        original_cost = clean_numeric(original_row.get(COL_SHOPIFY_COST, 0))
+        new_cost = clean_numeric(row.get(COL_SHOPIFY_COST, 0))
+        source = identify_product_source(row)
+        
+        if source == 'BBR':
+            costo_bbr = clean_numeric(row.get(COL_COSTO_BBR, 0))
+            if costo_bbr > 0 and new_cost != original_cost:
+                changes.append(f"COST BBR: {original_cost:.2f}→{new_cost:.2f} (da CostoBBRModels={costo_bbr:.2f})")
+        elif source == 'MCWS':
+            net_price = clean_numeric(row.get(COL_NET_PRICE, 0))
+            if net_price > 0 and new_cost != original_cost:
+                changes.append(f"COST MCWS: {original_cost:.2f}→{new_cost:.2f} (da NetPrice={net_price:.2f})")
+        
+        # ========================================
+        # 3. CHECK PRICE CHANGES
+        # ========================================
+        original_price = clean_numeric(original_row.get(COL_SHOPIFY_PRICE, 0))
+        new_price = clean_numeric(row.get(COL_SHOPIFY_PRICE, 0))
+        
+        if source == 'BBR':
+            expected_price = round(new_cost * BBR_MARKUP, 2) if new_cost > 0 else 0
+            if original_price != expected_price and new_price == expected_price:
+                changes.append(f"PRICE BBR: {original_price:.2f}→{new_price:.2f} (markup={BBR_MARKUP})")
+        elif source == 'MCWS':
+            brand = extract_brand_from_tags(row.get(COL_SHOPIFY_TAGS, ''))
+            brand_lookup = brand.upper().replace(' ', '-')
+            if brand_lookup in MCWS_MARKUP_TABLE:
+                markup = MCWS_MARKUP_TABLE[brand_lookup]
+                expected_price = round(new_cost * markup, 2) if new_cost > 0 else 0
+                if original_price != expected_price and new_price == expected_price:
+                    changes.append(f"PRICE MCWS: {original_price:.2f}→{new_price:.2f} (markup={markup}, brand={brand})")
+        
+        # ========================================
+        # SCRIVI IL LOG
+        # ========================================
+        if changes:
+            df_output.at[idx, COL_CHANGE_LOG] = ' | '.join(changes)
+            change_count += 1
+        else:
+            # Se non ci sono variazioni, lascia vuoto (o annota che è invariato)
+            df_output.at[idx, COL_CHANGE_LOG] = ''
+    
+    log_messages.append(f"   [CHANGE LOG] Trovate {change_count} righe con variazioni")
+    
+    return df_output
 
 
 def process_costs_and_prices(
@@ -551,7 +722,14 @@ def process_inventory_v02(
         all_stats['costs_prices'] = cost_price_stats
     
     # ==========================================
-    # 6. RIEPILOGO FINALE
+    # 6. CHANGE LOG (DEBUG)
+    # ==========================================
+    if not df_output.empty:
+        log_messages.append("5. Generating Change Log...")
+        df_output = add_change_log_column(df_output, shopify_df, log_messages)
+    
+    # ==========================================
+    # 7. RIEPILOGO FINALE
     # ==========================================
     log_messages.append("=" * 50)
     log_messages.append("RIEPILOGO ELABORAZIONE")
