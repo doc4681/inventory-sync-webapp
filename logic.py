@@ -372,15 +372,16 @@ def add_change_log_column(
                 changes.append(f"COST MCWS: {original_cost:.2f}→{new_cost:.2f} (da NetPrice={net_price:.2f})")
         
         # ========================================
-        # 3. CHECK PRICE CHANGES
+        # CHECK PRICE CHANGES (solo per log, non per filtro)
         # ========================================
+        price_changes = []
         original_price = clean_numeric(original_row.get(COL_SHOPIFY_PRICE, 0))
         new_price = clean_numeric(row.get(COL_SHOPIFY_PRICE, 0))
         
         if source == 'BBR':
             expected_price = round(new_cost * BBR_MARKUP, 2) if new_cost > 0 else 0
             if original_price != expected_price and new_price == expected_price:
-                changes.append(f"PRICE BBR: {original_price:.2f}→{new_price:.2f} (markup={BBR_MARKUP})")
+                price_changes.append(f"PRICE BBR: {original_price:.2f}→{new_price:.2f} (markup={BBR_MARKUP})")
         elif source == 'MCWS':
             brand = extract_brand_from_tags(row.get(COL_SHOPIFY_TAGS, ''))
             brand_lookup = brand.upper().replace(' ', '-')
@@ -388,21 +389,35 @@ def add_change_log_column(
                 markup = MCWS_MARKUP_TABLE[brand_lookup]
                 expected_price = round(new_cost * markup, 2) if new_cost > 0 else 0
                 if original_price != expected_price and new_price == expected_price:
-                    changes.append(f"PRICE MCWS: {original_price:.2f}→{new_price:.2f} (markup={markup}, brand={brand})")
+                    price_changes.append(f"PRICE MCWS: {original_price:.2f}→{new_price:.2f} (markup={markup}, brand={brand})")
         
         # ========================================
         # SCRIVI IL LOG
         # ========================================
-        if changes:
-            df_output.at[idx, COL_CHANGE_LOG] = ' | '.join(changes)
+        # Combina tutti i cambiamenti
+        all_changes = changes + price_changes
+        
+        if all_changes:
+            df_output.at[idx, COL_CHANGE_LOG] = ' | '.join(all_changes)
+        
+        # FILTRO: Considera solo QTY e COST per determinare se includere la riga
+        # (I prezzi sono calcolati automaticamente dai costi, quindi non sono "modifiche" da verificare)
+        has_qty_or_cost_change = len(changes) > 0
+        
+        if has_qty_or_cost_change:
             change_count += 1
         else:
-            # Se non ci sono variazioni, lascia vuoto (o annota che è invariato)
+            # Se non ci sono variazioni di qty o cost, marca come vuoto
             df_output.at[idx, COL_CHANGE_LOG] = ''
     
-    log_messages.append(f"   [CHANGE LOG] Trovate {change_count} righe con variazioni")
+    log_messages.append(f"   [CHANGE LOG] Trovate {change_count} righe con variazioni (QTY o COST)")
     
-    return df_output
+    # FILTRO: Mantieni solo le righe con variazioni di QTY o COST
+    df_filtered = df_output[df_output[COL_CHANGE_LOG] != ''].copy()
+    
+    log_messages.append(f"   [CHANGE LOG] Output filtrato: {len(df_filtered)} righe con modifiche")
+    
+    return df_filtered
 
 
 def process_costs_and_prices(
